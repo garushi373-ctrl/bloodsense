@@ -1,0 +1,60 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<h1>Blood Black Box</h1>
+<p>Every blood bag has a recorded journey. Unusual delays are flagged automatically (z-score above 2).</p>
+
+{% set top = rows|sort(attribute='delayed_pct')|last %}
+<div class="alert">Biggest bottleneck: <b>{{ top.pair }}</b> - {{ top.delayed_pct }}% of units were delayed (normal average {{ top.mean|hm }}).</div>
+
+<div class="card">
+<h3>Weekday vs weekend average time (minutes)</h3>
+<canvas id="chart" height="110"></canvas>
+</div>
+
+<table>
+<tr><th>Transition</th><th>Normal average</th><th>Delay limit</th><th>Delayed units</th><th>Delayed %</th></tr>
+{% for r in rows %}
+<tr><td>{{ r.pair }}</td><td>{{ r.mean|hm }}</td><td>{{ r.limit|hm }}</td><td>{{ r.delayed }}</td><td>{{ r.delayed_pct }}%</td></tr>
+{% endfor %}
+</table>
+
+<h3>Most delayed units</h3>
+<table>
+<tr><th>Unit</th><th>Group</th><th>Product</th><th>Worst step</th><th>Took</th><th>Normal</th></tr>
+{% for u in worst %}
+<tr><td><a href="/unit/{{ u.unit_id }}">#{{ u.unit_id }}</a></td><td>{{ u.blood_group }}</td><td>{{ u.product }}</td><td>{{ u.pair }}</td><td class="bad">{{ u.minutes|hm }}</td><td>{{ u.normal|hm }}</td></tr>
+{% endfor %}
+</table>
+
+<div class="card">
+<h3>Open a unit</h3>
+<form action="/blackbox/go" method="get">
+<input name="unit_id" type="number" min="1" placeholder="Unit ID" required>
+<button>Open</button>
+</form>
+</div>
+
+<div class="card">
+<h3>Register a new blood bag (demo)</h3>
+<form action="/unit/new" method="post">
+<select name="blood_group">{% for g in groups %}<option>{{ g }}</option>{% endfor %}</select>
+<select name="product"><option>PRBC</option><option>Platelets</option></select>
+<button>Create and show QR</button>
+</form>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+new Chart(document.getElementById("chart"), {
+  type: "bar",
+  data: {
+    labels: {{ rows|map(attribute='pair')|list|tojson }},
+    datasets: [
+      {label: "Weekday", data: {{ rows|map(attribute='weekday_mean')|list|tojson }}, backgroundColor: "#90a4ae"},
+      {label: "Weekend", data: {{ rows|map(attribute='weekend_mean')|list|tojson }}, backgroundColor: "#b71c1c"}
+    ]
+  },
+  options: {responsive: true, scales: {y: {beginAtZero: true, title: {display: true, text: "minutes"}}}}
+});
+</script>
+{% endblock %}

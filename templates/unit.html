@@ -1,0 +1,43 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<h1>{{ u.blood_group }} {{ u.product }} - Unit #{{ u.unit_id }}</h1>
+<p>Collected: {{ u.collected_on }} | Expiry: {{ u.expiry_date }} | Status: {{ u.status }}</p>
+
+{% for s in steps if s.delayed %}
+<div class="alert"><b>Unusual delay detected</b> at {{ s.pair }}: took {{ s.minutes|hm }} (normal: {{ s.normal|hm }})</div>
+{% endfor %}
+
+<h3>Journey</h3>
+<table>
+<tr><th>Stage</th><th>Time</th></tr>
+{% for e in events %}<tr><td>{{ e[0] }}</td><td>{{ e[1] }}</td></tr>{% endfor %}
+</table>
+
+<h3>Time between stages</h3>
+<table>
+<tr><th>Step</th><th>Took</th><th>Normal</th><th>Status</th></tr>
+{% for s in steps %}
+<tr><td>{{ s.pair }}</td><td>{{ s.minutes|hm }}</td><td>{{ s.normal|hm }}</td>
+<td class="{{ 'bad' if s.delayed else 'ok' }}">{{ 'DELAYED' if s.delayed else 'OK' }}</td></tr>
+{% endfor %}
+</table>
+
+{% if next_stage %}
+<div class="card">
+<h3>Record next stage: {{ next_stage }}</h3>
+<form method="post" action="/unit/{{ u.unit_id }}/stage">
+<input name="demo_minutes" type="number" step="1" min="0" placeholder="Demo: minutes after previous stage (optional)" style="width:340px">
+<button>Record {{ next_stage }}</button>
+</form>
+</div>
+{% else %}
+<p class="ok">All stages recorded.</p>
+{% endif %}
+
+<div class="card">
+<h3>QR code</h3>
+<img src="/unit/{{ u.unit_id }}/qr.png" width="180" alt="QR code">
+<p>{{ scan_url }}</p>
+</div>
+<p><a href="/blackbox">Back to Black Box dashboard</a></p>
+{% endblock %}
