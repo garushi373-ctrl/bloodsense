@@ -1,0 +1,100 @@
+﻿{% extends "base.html" %}
+{% block head %}<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">{% endblock %}
+{% block content %}
+<h1>Camp Planner</h1>
+<p>Decide where and when to hold the next camp, before the camp happens. The turnout model is trained on {{ plan.n }} past camps.</p>
+
+<div class="good"><b>Recommended next camp location:</b> {{ areas[0].area }}
+({{ areas[0].level }}, {{ areas[0].dist }} km from the nearest blood bank, {{ areas[0].per_day }} units requested per day, last camp {{ areas[0].since }} days ago).</div>
+
+<form method="get" action="/camp" class="card">
+<div class="row">
+<label>Area <select name="area">{% for a in areas %}<option {% if a.area == area %}selected{% endif %}>{{ a.area }}</option>{% endfor %}</select></label>
+<label>Date <input type="date" name="date" value="{{ date_str }}"></label>
+<label>Start time <select name="hour">{% for o in plan.options %}<option value="{{ o.hour }}" {% if o.hour == hour %}selected{% endif %}>{{ o.label }}</option>{% endfor %}</select></label>
+<label>Registered donors <input type="number" name="registered" min="10" max="2000" value="{{ registered }}" style="width:90px"></label>
+<label><input type="checkbox" name="holiday" value="1" {% if holiday %}checked{% endif %}> Holiday / festival</label>
+<button>Plan camp</button>
+</div>
+</form>
+
+{% if planned.p_low >= 50 %}
+<div class="alert"><b>High probability of low turnout ({{ planned.p_low }}%)</b> if the camp starts at {{ planned.label }} on this date.<br>
+Suggestion: change timing from {{ planned.label }} to {{ best.label }}. Expected turnout may improve from {{ planned.turnout }} to {{ best.turnout }} donors.</div>
+{% elif best.hour != planned.hour and best.turnout > planned.turnout * 1.1 %}
+<div class="warn"><b>Turnout can be better.</b> {{ best.label }} is expected to bring {{ best.turnout }} donors against {{ planned.turnout }} at {{ planned.label }}.</div>
+{% else %}
+<div class="good"><b>Good timing.</b> Expected turnout at {{ planned.label }}: about {{ planned.turnout }} of {{ registered }} registered donors ({{ planned.rate }}%).</div>
+{% endif %}
+{% if plan.holiday %}<p class="med">This date is treated as a holiday (Sundays count as holidays in the training data), which lowers expected turnout.</p>{% endif %}
+
+<h3>Expected turnout by start time</h3>
+<table>
+<tr><th>Start time</th><th>Expected turnout rate</th><th>Expected donors</th><th>Low-turnout probability (below 40%)</th></tr>
+{% for o in plan.options %}
+<tr>
+<td>{{ o.label }}{% if o.hour == best.hour %} <b class="ok">(best)</b>{% endif %}</td>
+<td>{{ o.rate }}%</td><td>{{ o.turnout }}</td>
+<td class="{{ 'bad' if o.p_low >= 50 else 'ok' }}">{{ o.p_low }}%</td>
+</tr>
+{% endfor %}
+</table>
+
+<h3>Blood groups needed near {{ area }} (last 180 days)</h3>
+<table>
+<tr><th>Blood group</th><th>Units requested</th><th>Share of demand</th><th>Requirement</th><th>Expected donors of this group</th></tr>
+{% for g in groups %}
+<tr><td>{{ g.group }}</td><td>{{ g.units }}</td><td>{{ g.share }}%</td>
+<td class="{{ 'bad' if g.level == 'High' else ('med' if g.level == 'Medium' else '') }}">{{ g.level }}</td>
+<td>{{ g.expected_donors }}</td></tr>
+{% endfor %}
+</table>
+
+<h3>Blood access map</h3>
+<div id="map" style="height:420px;border:1px solid #ddd;border-radius:6px"></div>
+<p>
+<span style="color:#b71c1c">&#9679;</span> Blood access desert (25 km or more from a blood bank)
+&nbsp; <span style="color:#ef6c00">&#9679;</span> Poor access (12 to 25 km)
+&nbsp; <span style="color:#2e7d32">&#9679;</span> Good access
+&nbsp; <span style="color:#1565c0">&#9679;</span> Blood bank. Bigger circle means higher demand.
+</p>
+
+<h3>Where should we conduct the next camp? (priority order)</h3>
+<table>
+<tr><th>Area</th><th>Access</th><th>Distance to nearest blood bank</th><th>Units requested per day</th><th>Emergency requests (90 days)</th><th>Days since last camp</th><th>Priority score</th></tr>
+{% for a in areas %}
+<tr><td><a href="/camp?area={{ a.area }}&date={{ date_str }}&hour={{ hour }}&registered={{ registered }}">{{ a.area }}</a></td>
+<td class="{{ 'bad' if a.level == 'BLOOD ACCESS DESERT' else ('med' if a.level == 'Poor access' else 'ok') }}">{{ a.level }}</td>
+<td>{{ a.dist }} km</td><td>{{ a.per_day }}</td><td>{{ a.emergency }}</td><td>{{ a.since }}</td><td>{{ a.score }}</td></tr>
+{% endfor %}
+</table>
+
+{% for a in areas if a.level == 'BLOOD ACCESS DESERT' %}
+<div class="alert"><b>{{ a.area }} is a blood access desert</b> ({{ a.dist }} km from the nearest blood bank, {{ a.emergency }} emergency requests in 90 days).<br>
+Suggested actions: hold a donation camp here, send a mobile blood collection unit, keep a small emergency stock nearby, build a local emergency donor network.</div>
+{% endfor %}
+
+<p style="font-size:13px;color:#555">Method: turnout rate is predicted with linear regression (start time, working-day morning, holiday) on past camps. Low-turnout probability uses the model's residual error ({{ plan.sigma }}). Area coordinates and blood bank locations are examples; edit them at the top of modules/camp_planner.py.</p>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+var areas = {{ areas|tojson }};
+var banks = {{ banks|tojson }};
+var map = L.map("map");
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom: 18, attribution: "&copy; OpenStreetMap contributors"}).addTo(map);
+var pts = [];
+areas.forEach(function (a) {
+  var col = a.level === "BLOOD ACCESS DESERT" ? "#b71c1c" : (a.level === "Poor access" ? "#ef6c00" : "#2e7d32");
+  L.circleMarker([a.lat, a.lon], {radius: 6 + a.per_day * 2.5, color: col, fillColor: col, fillOpacity: 0.5})
+    .addTo(map)
+    .bindPopup("<b>" + a.area + "</b><br>" + a.level + "<br>" + a.dist + " km from nearest blood bank<br>" + a.per_day + " units requested per day");
+  pts.push([a.lat, a.lon]);
+});
+banks.forEach(function (b) {
+  L.circleMarker([b[1], b[2]], {radius: 10, color: "#1565c0", fillColor: "#1565c0", fillOpacity: 0.9})
+    .addTo(map).bindPopup("<b>" + b[0] + "</b>");
+  pts.push([b[1], b[2]]);
+});
+map.fitBounds(pts, {padding: [30, 30]});
+</script>
+{% endblock %}

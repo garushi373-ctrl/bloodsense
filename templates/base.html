@@ -6,28 +6,34 @@
 <title>BloodSense</title>
 <style>
 body{font-family:Arial,sans-serif;margin:0;background:#fafafa;color:#222}
-header{background:#b71c1c;color:#fff;padding:12px 24px;display:flex;gap:24px;align-items:center}
+header{background:#b71c1c;color:#fff;padding:12px 24px;display:flex;gap:24px;align-items:center;flex-wrap:wrap}
 header a{color:#fff;text-decoration:none}
-header .soon{opacity:.6}
+header a:hover{text-decoration:underline}
 main{max-width:980px;margin:24px auto;padding:0 16px}
 table{border-collapse:collapse;width:100%;background:#fff;margin:12px 0}
 th,td{border:1px solid #ddd;padding:8px;text-align:left;font-size:14px}
 th{background:#f3f3f3}
 .card{background:#fff;border:1px solid #ddd;border-radius:6px;padding:16px;margin:16px 0}
 .alert{background:#ffebee;border-left:4px solid #b71c1c;padding:12px;margin:12px 0}
+.good{background:#e8f5e9;border-left:4px solid #2e7d32;padding:12px;margin:12px 0}
+.warn{background:#fff3e0;border-left:4px solid #ef6c00;padding:12px;margin:12px 0}
 .ok{color:#2e7d32}
 .bad{color:#b71c1c;font-weight:bold}
+.med{color:#ef6c00;font-weight:bold}
 button{background:#b71c1c;color:#fff;border:0;padding:8px 14px;border-radius:4px;cursor:pointer}
 input,select{padding:6px;margin:4px 4px 4px 0}
+.row{display:flex;gap:16px;flex-wrap:wrap;align-items:center}
+.chip{display:inline-block;background:#f3f3f3;border:1px solid #ddd;border-radius:14px;padding:4px 10px;margin:2px;font-size:13px;color:#222;text-decoration:none}
 </style>
+{% block head %}{% endblock %}
 </head>
 <body>
 <header>
-<b>BloodSense</b>
+<a href="/blackbox"><b>BloodSense</b></a>
 <a href="/blackbox">Black Box</a>
-<span class="soon">Risk Radar</span>
-<span class="soon">Camp Planner</span>
-<span class="soon">What-if</span>
+<a href="/risk">Risk Radar</a>
+<a href="/camp">Camp Planner</a>
+<a href="/whatif">What-if</a>
 </header>
 <main>
 {% block content %}{% endblock %}

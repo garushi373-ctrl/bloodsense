@@ -1,0 +1,75 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<style>.med{color:#ef6c00;font-weight:bold}</style>
+<h1>Risk Radar</h1>
+<p>Date: {{ today }}. Shortage and expiry risk for every blood group, based on current stock and recent demand.</p>
+
+<form method="get" action="/risk" class="card">
+Demand scenario:
+<select name="surge" onchange="this.form.submit()">
+{% for v in [1.0, 1.2, 1.3, 1.5, 2.0] %}
+<option value="{{ v }}" {% if v == surge %}selected{% endif %}>{{ (v * 100)|int }}% of normal demand</option>
+{% endfor %}
+</select>
+</form>
+
+<div style="display:flex;gap:12px;flex-wrap:wrap">
+<div class="card" style="flex:1"><b class="bad" style="font-size:24px">{{ counts.HIGH }}</b><br>HIGH shortage risk</div>
+<div class="card" style="flex:1"><b class="med" style="font-size:24px">{{ counts.MEDIUM }}</b><br>MEDIUM</div>
+<div class="card" style="flex:1"><b class="ok" style="font-size:24px">{{ counts.LOW }}</b><br>LOW</div>
+</div>
+
+<div class="alert"><b>Top action today:</b> {{ actions[0] }}</div>
+{% if actions|length > 1 %}
+<ul>{% for a in actions[1:] %}<li>{{ a }}</li>{% endfor %}</ul>
+{% endif %}
+
+<div class="card">
+<h3>Shortage risk by blood group (%)</h3>
+<canvas id="rc" height="110"></canvas>
+</div>
+
+<h3>Stock, demand and risk (highest risk first)</h3>
+<table>
+<tr><th>Group</th><th>Product</th><th>In stock</th><th>Daily demand</th><th>Cover (days)</th><th>Shortage risk</th><th>Expiring soon</th><th>Expiry risk</th></tr>
+{% for r in rows %}
+<tr>
+<td>{{ r.group }}</td><td>{{ r.product }}</td><td>{{ r.stock }}</td><td>{{ r.demand }}</td>
+<td>{{ r.cover if r.cover < 99 else '-' }}</td>
+<td class="{{ 'bad' if r.level == 'HIGH' else ('med' if r.level == 'MEDIUM' else 'ok') }}">{{ r.level }} ({{ r.risk_pct }}%)</td>
+<td>{{ r.expiring }} (within {{ r.window }} days)</td>
+<td class="{{ 'bad' if r.at_risk >= 2 else '' }}">{{ r.at_risk }} units ({{ r.exp_pct }}%)</td>
+</tr>
+{% endfor %}
+</table>
+
+<h3>Wastage in the last 90 days</h3>
+<table>
+<tr><th>Product</th><th>Used</th><th>Expired</th><th>Wastage rate</th><th>Demand trend (7 days vs 30 days)</th></tr>
+{% for w in wastage %}
+<tr><td>{{ w.product }}</td><td>{{ w.used }}</td><td>{{ w.expired }}</td><td>{{ w.rate }}%</td><td>{{ spikes[w.product] }}x</td></tr>
+{% endfor %}
+</table>
+
+<div class="card">
+<h3>Process health (from Black Box)</h3>
+Biggest bottleneck: <b>{{ bottleneck.pair }}</b>, {{ bottleneck.delayed_pct }}% of units were delayed.
+Delays before storage use up part of the shelf life, which matters most for platelets (5 days).
+<a href="/blackbox">Open Black Box</a>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+new Chart(document.getElementById("rc"), {
+  type: "bar",
+  data: {
+    labels: {{ groups|tojson }},
+    datasets: [
+      {label: "PRBC", data: {{ chart.PRBC|tojson }}, backgroundColor: "#90a4ae"},
+      {label: "Platelets", data: {{ chart.Platelets|tojson }}, backgroundColor: "#b71c1c"}
+    ]
+  },
+  options: {scales: {y: {beginAtZero: true, max: 100, title: {display: true, text: "shortage risk %"}}}}
+});
+</script>
+{% endblock %}

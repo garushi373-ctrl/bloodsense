@@ -1,0 +1,73 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<h1>What-if Simulator</h1>
+<p>Change donations, demand or storage and see when a shortage could happen. Each scenario runs 1000 random simulations.</p>
+
+<form method="get" action="/whatif" class="card" id="f">
+<div class="row">
+<label>Blood group <select name="group" onchange="this.form.submit()">{% for g in ['All'] + groups %}<option {% if g == group %}selected{% endif %}>{{ g }}</option>{% endfor %}</select></label>
+<label>Product <select name="product" onchange="this.form.submit()">{% for p in ['PRBC', 'Platelets'] %}<option {% if p == product %}selected{% endif %}>{{ p }}</option>{% endfor %}</select></label>
+<label>Days to simulate <select name="horizon" onchange="this.form.submit()">{% for h in [14, 30, 60] %}<option value="{{ h }}" {% if h == horizon %}selected{% endif %}>{{ h }} days</option>{% endfor %}</select></label>
+</div>
+<div class="row" style="margin-top:8px">
+<label>Donations: <b id="v1">{{ don }}%</b><br><input type="range" name="don" min="-60" max="60" step="5" value="{{ don }}" oninput="document.getElementById('v1').textContent=this.value+'%'" onchange="this.form.submit()"></label>
+<label>Demand: <b id="v2">{{ dem }}%</b><br><input type="range" name="dem" min="-50" max="100" step="5" value="{{ dem }}" oninput="document.getElementById('v2').textContent=this.value+'%'" onchange="this.form.submit()"></label>
+<label>Fridges unavailable: <b id="v3">{{ fridges }}</b> of 4<br><input type="range" name="fridges" min="0" max="3" step="1" value="{{ fridges }}" oninput="document.getElementById('v3').textContent=this.value" onchange="this.form.submit()"></label>
+</div>
+<div style="margin-top:8px">
+Quick scenarios:
+<a class="chip" href="/whatif?group={{ group }}&product={{ product }}&horizon={{ horizon }}&don=-20&dem=0&fridges=0">Donations -20%</a>
+<a class="chip" href="/whatif?group={{ group }}&product={{ product }}&horizon={{ horizon }}&don=0&dem=30&fridges=0">Demand +30%</a>
+<a class="chip" href="/whatif?group={{ group }}&product={{ product }}&horizon={{ horizon }}&don=0&dem=50&fridges=0">Dengue season (demand +50%)</a>
+<a class="chip" href="/whatif?group={{ group }}&product={{ product }}&horizon={{ horizon }}&don=0&dem=0&fridges=1">One fridge down</a>
+<a class="chip" href="/whatif?group={{ group }}&product={{ product }}&horizon={{ horizon }}&don=-20&dem=30&fridges=1">Worst case</a>
+<a class="chip" href="/whatif?group={{ group }}&product={{ product }}&horizon={{ horizon }}&don=0&dem=0&fridges=0">Reset</a>
+</div>
+</form>
+
+{% if r.scen.short_end >= 50 %}
+<div class="alert"><b>Shortage likely{% if r.shortage_date %} from about {{ r.shortage_date }}{% endif %}.</b>
+In this scenario {{ r.scen.short_end }}% of simulations run out of {{ product }}{% if group != 'All' %} ({{ group }}){% endif %} at least once within {{ horizon }} days.</div>
+{% elif r.scen.short_end >= 20 %}
+<div class="warn"><b>Moderate risk.</b> {{ r.scen.short_end }}% of simulations see a shortage within {{ horizon }} days.</div>
+{% else %}
+<div class="good"><b>Stock holds.</b> Only {{ r.scen.short_end }}% of simulations see a shortage within {{ horizon }} days.</div>
+{% endif %}
+
+<table>
+<tr><th>Result</th><th>Normal (baseline)</th><th>This scenario</th></tr>
+<tr><td>Chance of at least one shortage within {{ horizon }} days</td><td>{{ r.base.short_end }}%</td><td class="{{ 'bad' if r.scen.short_end >= 50 else '' }}">{{ r.scen.short_end }}%</td></tr>
+<tr><td>Date when shortage becomes more likely than not</td><td>{{ r.base_date or 'None' }}</td><td>{{ r.shortage_date or 'None' }}</td></tr>
+<tr><td>Expected units expired</td><td>{{ r.base.expired }}</td><td>{{ r.scen.expired }}</td></tr>
+<tr><td>Expected unmet demand (units)</td><td>{{ r.base.unmet }}</td><td class="{{ 'bad' if r.scen.unmet > r.base.unmet + 5 else '' }}">{{ r.scen.unmet }}</td></tr>
+<tr><td>Average stock on last day (units)</td><td>{{ r.base.end_stock }}</td><td>{{ r.scen.end_stock }}</td></tr>
+</table>
+
+<div class="card"><h3>Stock level (units)</h3><canvas id="c1" height="110"></canvas></div>
+<div class="card"><h3>Chance of a shortage by each day (%)</h3><canvas id="c2" height="90"></canvas></div>
+
+<p style="font-size:13px;color:#555">Assumptions: current stock {{ r.stock_now }} units. Average donations {{ r.don }} per day (last 60 days) and demand {{ r.dem }} per day (last 30 days); in this scenario {{ r.don_s }} and {{ r.dem_s }}. Daily donations and demand are random (Poisson), the oldest units are used first, and units expire after their shelf life. A fridge that is unavailable removes its share (1 in 4) of the current stock. Edit the logic in modules/simulator.py.</p>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+var labels = {{ r.labels|tojson }};
+new Chart(document.getElementById("c1"), {
+  type: "line",
+  data: {labels: labels, datasets: [
+    {label: "Baseline (average)", data: {{ r.base.mean|tojson }}, borderColor: "#90a4ae", pointRadius: 0},
+    {label: "Scenario (average)", data: {{ r.scen.mean|tojson }}, borderColor: "#b71c1c", pointRadius: 0},
+    {label: "Scenario, unlucky 10%", data: {{ r.scen.p10|tojson }}, borderColor: "#b71c1c", borderDash: [5, 5], pointRadius: 0},
+    {label: "Scenario, lucky 10%", data: {{ r.scen.p90|tojson }}, borderColor: "#ef9a9a", borderDash: [5, 5], pointRadius: 0}
+  ]},
+  options: {scales: {y: {beginAtZero: true, title: {display: true, text: "units in stock"}}}}
+});
+new Chart(document.getElementById("c2"), {
+  type: "line",
+  data: {labels: labels, datasets: [
+    {label: "Baseline", data: {{ r.base.short|tojson }}, borderColor: "#90a4ae", pointRadius: 0},
+    {label: "Scenario", data: {{ r.scen.short|tojson }}, borderColor: "#b71c1c", pointRadius: 0}
+  ]},
+  options: {scales: {y: {beginAtZero: true, max: 100, title: {display: true, text: "% of simulations"}}}}
+});
+</script>
+{% endblock %}

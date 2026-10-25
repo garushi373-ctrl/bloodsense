@@ -1,11 +1,23 @@
 ﻿import sys
+from datetime import date, timedelta
 
 from flask import Flask, abort, redirect, render_template, request, send_file, url_for
 
 from modules import black_box as bb
+from modules import camp_planner as cp
+from modules import risk_radar as rr
+from modules import simulator as sim
 
 app = Flask(__name__)
 GROUPS = ["O+", "B+", "A+", "AB+", "O-", "B-", "A-", "AB-"]
+
+
+def _int(name, default, lo, hi):
+    try:
+        v = int(float(request.args.get(name, default)))
+    except ValueError:
+        v = default
+    return min(max(v, lo), hi)
 
 
 @app.template_filter("hm")
@@ -20,7 +32,61 @@ def hm(minutes):
 
 @app.route("/")
 def home():
-    return redirect(url_for("blackbox"))
+    return redirect(url_for("risk"))
+
+
+@app.route("/risk")
+def risk():
+    try:
+        surge = float(request.args.get("surge", "1"))
+    except ValueError:
+        surge = 1.0
+    surge = min(max(surge, 0.5), 3.0)
+    data = rr.compute(surge)
+    bottleneck = max(bb.summary(), key=lambda r: r["delayed_pct"])
+    return render_template("risk.html", surge=surge, bottleneck=bottleneck, **data)
+
+
+@app.route("/camp")
+def camp():
+    areas = cp.area_table()
+    area = request.args.get("area", areas[0]["area"])
+    if area not in cp.AREAS:
+        area = areas[0]["area"]
+    try:
+        d = date.fromisoformat(request.args.get("date", ""))
+    except ValueError:
+        d = date.today() + timedelta(days=7)
+    registered = _int("registered", 120, 10, 2000)
+    hour = _int("hour", 10, 10, 16)
+    if hour not in (10, 12, 16):
+        hour = 10
+    holiday = request.args.get("holiday") == "1"
+    pl = cp.plan(area, d, registered, holiday)
+    planned = next(o for o in pl["options"] if o["hour"] == hour)
+    groups = cp.demand_by_group(area, planned["turnout"])
+    return render_template("camp.html", areas=areas, area=area, date_str=d.isoformat(),
+                           registered=registered, hour=hour, holiday=holiday,
+                           plan=pl, planned=planned, best=pl["best"], groups=groups,
+                           banks=cp.BANKS)
+
+
+@app.route("/whatif")
+def whatif():
+    group = request.args.get("group", "All")
+    if group not in GROUPS:
+        group = "All"
+    product = request.args.get("product", "PRBC")
+    if product not in ("PRBC", "Platelets"):
+        product = "PRBC"
+    horizon = _int("horizon", 30, 7, 60)
+    don = _int("don", 0, -60, 60)
+    dem = _int("dem", 0, -50, 100)
+    fridges = _int("fridges", 0, 0, 3)
+    r = sim.run(group, product, horizon, don, dem, fridges)
+    return render_template("whatif.html", r=r, group=group, product=product,
+                           horizon=horizon, don=don, dem=dem, fridges=fridges,
+                           groups=GROUPS)
 
 
 @app.route("/blackbox")
